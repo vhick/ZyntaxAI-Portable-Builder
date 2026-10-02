@@ -42,7 +42,9 @@ foreach ($name in @(
     "LAUNCH-ZYNTAXAI-PORTABLE.cmd",
     "INSTALL-PORTABLE-STARTUP.cmd",
     "REMOVE-PORTABLE-STARTUP.cmd",
-    "VERIFY-PORTABLE.ps1"
+    "VERIFY-PORTABLE.ps1",
+    "MIGRATE-OFFICIAL-DATA.ps1",
+    "CLEAN-OLD-HOST-DATA.ps1"
 )) {
     Copy-Item -LiteralPath (Join-Path $KitRoot "portable\$name") `
         -Destination (Join-Path $OutputRoot $name) `
@@ -61,15 +63,24 @@ Set-Content -LiteralPath (Join-Path $OutputRoot "SOURCE-REVISION.txt") `
     )
 
 @{
-    mode = "portable-data-os-keychain"
+    mode = "true-portable-encrypted-file-secrets"
     upstream_revision = $revision
     portable_data_root = "./Data"
     app_directories_override = $true
-    api_keys_portable = $false
-    note = "API keys still use the upstream Windows Credential Manager backend."
+    api_keys_portable = $true
+    note = "Application-owned state and API keys are stored below ./Data. API keys use upstream AES-256-GCM encrypted-file storage."
 } |
     ConvertTo-Json -Depth 5 |
     Set-Content -LiteralPath (Join-Path $OutputRoot "PORTABLE-BUILD.json") -Encoding UTF8
+
+
+$patchMarker = Join-Path $SourceRoot ".zyntax-true-portable-patch.json"
+if (-not (Test-Path -LiteralPath $patchMarker -PathType Leaf)) {
+    throw "True-portable patch marker was not found. Refusing to package a build as portable."
+}
+Copy-Item -LiteralPath $patchMarker `
+    -Destination (Join-Path $OutputRoot "TRUE-PORTABLE-PATCH.json") `
+    -Force
 
 $license = Join-Path $SourceRoot "LICENSE"
 if (Test-Path -LiteralPath $license -PathType Leaf) {
