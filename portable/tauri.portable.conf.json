@@ -1,0 +1,7 @@
+{
+  "productName": "ZyntaxAI Portable",
+  "identifier": "dev.theholyonez.zyntaxai.portable",
+  "app": {
+    "appDirectoriesOverride": "./Data"
+  }
+}
