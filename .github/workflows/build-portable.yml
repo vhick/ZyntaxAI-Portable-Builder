@@ -1,0 +1,155 @@
+name: Build ZyntaxAI Portable
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: What should the builder do?
+        required: true
+        default: portable-data
+        type: choice
+        options:
+          - portable-data
+          - inspect-secrets
+
+      upstream_repo:
+        description: Source repository (leave blank for YOUR-USERNAME/ZyntaxAI)
+        required: false
+        default: ""
+
+      upstream_ref:
+        description: Source branch/tag/SHA
+        required: false
+        default: "main"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zyntaxai-portable-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ZyntaxAI Portable
+    runs-on: windows-2022
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout portable-builder repository
+        uses: actions/checkout@v4
+
+      - name: Resolve source repository
+        id: source
+        shell: pwsh
+        run: |
+          $repo = "${{ inputs.upstream_repo }}"
+          if ([string]::IsNullOrWhiteSpace($repo)) {
+            $repo = "${{ github.repository_owner }}/ZyntaxAI"
+          }
+
+          $ref = "${{ inputs.upstream_ref }}"
+          if ([string]::IsNullOrWhiteSpace($ref)) {
+            $ref = "main"
+          }
+
+          "repo=$repo" >> $env:GITHUB_OUTPUT
+          "ref=$ref" >> $env:GITHUB_OUTPUT
+
+          Write-Host "Source repository: $repo"
+          Write-Host "Source ref:        $ref"
+
+      - name: Checkout synced ZyntaxAI fork
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.source.outputs.repo }}
+          ref: ${{ steps.source.outputs.ref }}
+          path: upstream
+          fetch-depth: 1
+
+      - name: Record upstream revision
+        id: revision
+        shell: pwsh
+        run: |
+          $rev = (git -C upstream rev-parse HEAD).Trim()
+          "sha=$rev" >> $env:GITHUB_OUTPUT
+          Write-Host "Source revision: $rev"
+
+      - name: Install pnpm 10
+        if: ${{ inputs.mode == 'portable-data' }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Setup Node 20
+        if: ${{ inputs.mode == 'portable-data' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: upstream/pnpm-lock.yaml
+
+      - name: Setup Rust
+        if: ${{ inputs.mode == 'portable-data' }}
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        if: ${{ inputs.mode == 'portable-data' }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: upstream
+
+      - name: Inspect secret backend source
+        if: ${{ inputs.mode == 'inspect-secrets' }}
+        shell: pwsh
+        run: |
+          & .\scripts\Inspect-Secrets.ps1 `
+            -SourceRoot "$PWD\upstream" `
+            -OutputRoot "$PWD\artifact\Secret-Inspection"
+
+      - name: Upload secret source inspection
+        if: ${{ inputs.mode == 'inspect-secrets' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZyntaxAI-Secret-Source-Inspection-${{ steps.revision.outputs.sha }}
+          path: artifact/Secret-Inspection/**
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Verify Tauri portable-directory support
+        if: ${{ inputs.mode == 'portable-data' }}
+        shell: pwsh
+        run: |
+          & .\scripts\Check-Tauri-Version.ps1 -SourceRoot "$PWD\upstream"
+
+      - name: Install ZyntaxAI dependencies
+        if: ${{ inputs.mode == 'portable-data' }}
+        working-directory: upstream
+        shell: pwsh
+        run: pnpm install --frozen-lockfile
+
+      - name: Build portable executable
+        if: ${{ inputs.mode == 'portable-data' }}
+        working-directory: upstream
+        shell: pwsh
+        run: |
+          pnpm tauri build --no-bundle --config "$env:GITHUB_WORKSPACE\portable\tauri.portable.conf.json"
+
+      - name: Assemble portable package
+        if: ${{ inputs.mode == 'portable-data' }}
+        shell: pwsh
+        run: |
+          & .\scripts\Assemble-Portable.ps1 `
+            -SourceRoot "$PWD\upstream" `
+            -OutputRoot "$PWD\artifact\ZyntaxAI-Portable" `
+            -KitRoot "$PWD"
+
+      - name: Upload portable build
+        if: ${{ inputs.mode == 'portable-data' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZyntaxAI-Portable-Windows-x64-${{ steps.revision.outputs.sha }}
+          path: artifact/ZyntaxAI-Portable/**
+          if-no-files-found: error
+          retention-days: 30
