@@ -32,8 +32,23 @@ foreach ($p in @(
 }
 
 W ""
-W "Cloud portable-data build still uses upstream Windows Credential Manager for provider API keys."
-W "Run the builder manually in inspect-secrets mode and upload that artifact for the strict portable-key patch."
+W ""
+W "=== Expected true-portable store ==="
+$store = Join-Path $root "Data\ZyntaxStore"
+W ("Store exists: {0}" -f (Test-Path -LiteralPath $store -PathType Container))
+foreach ($p in @(
+    (Join-Path $store "config\settings.json"),
+    (Join-Path $store "data\history.db"),
+    (Join-Path $store "data\logs"),
+    (Join-Path $store "data\secrets.key"),
+    (Join-Path $store "data\secrets.enc")
+)) {
+    W ("{0}: {1}" -f $p,(Test-Path -LiteralPath $p))
+}
+
+W ""
+W "This build forces ZyntaxAI's upstream encrypted-file secret backend."
+W "Windows Credential Manager should not be required for API keys in this portable fork."
 
 Write-Host "Verification report:"
 Write-Host "  $report"

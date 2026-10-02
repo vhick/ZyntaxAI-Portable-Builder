@@ -5,6 +5,7 @@ title ZyntaxAI Portable
 set "ROOT=%~dp0"
 set "EXE=%ROOT%ZyntaxAI-Portable.exe"
 set "DATA=%ROOT%Data"
+set "ZYNTAX_DATA_DIR=%ROOT%Data\ZyntaxStore"
 set "LOGDIR=%ROOT%LauncherLogs"
 set "LOG=%LOGDIR%\Launch.log"
 
@@ -15,6 +16,7 @@ echo.>>"%LOG%"
 echo ==== %date% %time% ZyntaxAI Portable launch ====>>"%LOG%"
 echo EXE=%EXE%>>"%LOG%"
 echo DATA=%DATA%>>"%LOG%"
+echo ZYNTAX_DATA_DIR=%ZYNTAX_DATA_DIR%>>"%LOG%"
 
 if not exist "%EXE%" (
   echo ERROR: ZyntaxAI-Portable.exe not found.>>"%LOG%"
