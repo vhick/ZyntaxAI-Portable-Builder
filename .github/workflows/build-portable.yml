@@ -10,6 +10,7 @@ on:
         type: choice
         options:
           - portable-data
+          - inspect-paths
           - inspect-secrets
 
       upstream_repo:
@@ -99,6 +100,23 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: upstream
+
+      - name: Inspect ZyntaxAI storage-path source
+        if: ${{ inputs.mode == 'inspect-paths' }}
+        shell: pwsh
+        run: |
+          & .\scripts\Inspect-Storage-Paths.ps1 `
+            -SourceRoot "$PWD\upstream" `
+            -OutputRoot "$PWD\artifact\Path-Inspection"
+
+      - name: Upload storage-path source inspection
+        if: ${{ inputs.mode == 'inspect-paths' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZyntaxAI-Storage-Path-Inspection-${{ steps.revision.outputs.sha }}
+          path: artifact/Path-Inspection/**
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Inspect secret backend source
         if: ${{ inputs.mode == 'inspect-secrets' }}
