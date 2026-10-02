@@ -153,6 +153,20 @@ jobs:
         run: |
           & .\scripts\Check-Tauri-Version.ps1 -SourceRoot "$PWD\upstream"
 
+      - name: Apply true-portable ZyntaxAI source patch
+        if: ${{ inputs.mode == 'portable-data' }}
+        shell: pwsh
+        run: |
+          & .\scripts\Apply-True-Portable-Patch.ps1 -SourceRoot "$PWD\upstream"
+
+      - name: Run portable storage tests
+        if: ${{ inputs.mode == 'portable-data' }}
+        working-directory: upstream
+        shell: pwsh
+        run: |
+          cargo test -p zyntax-store paths::tests --lib
+          cargo test -p zyntax-store secrets::tests --lib
+
       - name: Build portable executable
         if: ${{ inputs.mode == 'portable-data' }}
         working-directory: upstream
