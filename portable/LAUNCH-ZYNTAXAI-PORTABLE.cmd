@@ -17,13 +17,18 @@ echo ==== %date% %time% ZyntaxAI Portable launch ====>>"%LOG%"
 echo EXE=%EXE%>>"%LOG%"
 echo DATA=%DATA%>>"%LOG%"
 echo ZYNTAX_DATA_DIR=%ZYNTAX_DATA_DIR%>>"%LOG%"
+echo Mode=tray-only (--minimized)>>"%LOG%"
 
 if not exist "%EXE%" (
   echo ERROR: ZyntaxAI-Portable.exe not found.>>"%LOG%"
-  echo ERROR: ZyntaxAI-Portable.exe was not found.
+  echo.
+  echo ERROR: ZyntaxAI-Portable.exe was not found beside this launcher.
+  echo.
   pause
   exit /b 1
 )
 
-start "" "%EXE%"
+rem Always launch ZyntaxAI hidden in the system tray.
+rem Open the GUI later from the ZyntaxAI tray icon.
+start "" "%EXE%" --minimized
 exit /b 0
