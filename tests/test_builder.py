@@ -22,7 +22,7 @@ class SourcePatchTests(unittest.TestCase):
             tauri = src / 'src-tauri'
             tauri.mkdir()
             (tauri / 'tauri.conf.json').write_text(json.dumps({
-                'identifier': 'dev.theholyonez.zyntaxai', 'app': {'windows': []},
+                'identifier': 'dev.theholyonez.zyntaxai', 'app': {'windows': [{'label':'main','url':'index.html','width':940}, {'label':'overlay','url':'overlay.html','visible':False,'alwaysOnTop':True}]},
                 'bundle': {'createUpdaterArtifacts': True}
             }), encoding='utf-8')
             rust = tauri / 'src'
@@ -62,6 +62,7 @@ pub async fn install_update(app: AppHandle) -> CommandResult<()> {
             (rust / 'lib.rs').write_text('''
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_window_state::StateFlags;
+    logging::init();
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -71,11 +72,18 @@ use tauri_plugin_window_state::StateFlags;
             MacosLauncher::LaunchAgent,
             Some(vec![ARG_MINIMIZED]),
         ))
+            tray::install(app)?;
         .build(tauri::generate_context!())
 ''', encoding='utf-8')
             apply_portable.apply(src)
             cfg = json.loads((tauri / 'tauri.conf.json').read_text())
             self.assertNotIn('appDirectoriesOverride', cfg['app'])
+            self.assertEqual([w['label'] for w in cfg['app']['windows']], ['main','overlay'])
+            self.assertTrue(all(w['create'] is False for w in cfg['app']['windows']))
+            self.assertEqual(cfg['app']['windows'][0]['width'], 940)
+            self.assertEqual(cfg['app']['windows'][1]['url'], 'overlay.html')
+            self.assertTrue(cfg['app']['windows'][1]['alwaysOnTop'])
+            self.assertFalse(cfg['app']['windows'][1]['visible'])
             state = (rust / 'state.rs').read_text()
             self.assertIn('SecretStore::file_backed', state)
             self.assertIn('next.system.check_for_updates = false', state)
@@ -89,8 +97,23 @@ use tauri_plugin_window_state::StateFlags;
             self.assertNotIn('.plugin(tauri_plugin_autostart::init', lib)
             self.assertNotIn('tauri_plugin_window_state::Builder', lib)
             self.assertNotIn('use tauri_plugin_window_state::StateFlags;', lib)
+            self.assertIn('WebviewWindowBuilder::from_config(app, window_config)?', lib)
+            self.assertIn('.data_directory(browser_data.clone())', lib)
+            self.assertIn('for window_config in &app.config().app.windows', lib)
+            self.assertIn('std::env::var_os("ZYNTAX_DATA_DIR")', lib)
+            self.assertIn('Use Launch-ZyntaxAI.cmd to run the portable application.', lib)
+            self.assertLess(lib.index('Use Launch-ZyntaxAI.cmd'), lib.index('logging::init();'))
+            self.assertLess(lib.index('.data_directory(browser_data.clone())'), lib.index('tray::install(app)?'))
             with self.assertRaises(RuntimeError):
                 apply_portable.apply(src)  # must fail on already modified source
+
+    def test_tauri_windows_regression_guards_present(self):
+        patch = (ROOT / 'scripts/apply_portable.py').read_text(encoding='utf-8')
+        self.assertIn("{'main', 'overlay'}", patch)
+        self.assertIn("window['create'] = False", patch)
+        self.assertIn('WebviewWindowBuilder::from_config', patch)
+        self.assertIn('app.config().app.windows', patch)
+        self.assertNotIn("settings['app']['appDirectoriesOverride']", patch)
 
     def test_v102_autostart_regression_real_source_snippet(self):
         """Official release includes a blank line and nested Rust blocks.
@@ -238,3 +261,37 @@ checksum_path.write_text(sums, encoding="utf-8")
             (root / 'scripts/publish.py').write_text('not the audited publisher', encoding='utf-8')
             with self.assertRaisesRegex(RuntimeError, 'not found exactly once'):
                 fix_shared_publisher.patch(root)
+
+
+class PortableManagerAutostartTests(unittest.TestCase):
+    """Static checks only: registry behavior requires an actual Windows login."""
+
+    def test_opt_in_autostart_menu_and_registry_scope(self):
+        manager = (ROOT / 'runtime/ZyntaxAI-Manager.cmd').read_text(encoding='utf-8')
+        self.assertIn('choice /c 123456780', manager)
+        self.assertIn('8. Inspect leftover LocalAppData folder', manager)
+        self.assertIn('rmdir "%RESIDUE%"', manager)
+        self.assertNotIn('rmdir /s', manager.lower())
+        for option in ('5. Enable Windows login autostart',
+                       '6. Disable Windows login autostart',
+                       '7. Show Windows login autostart status'):
+            self.assertIn(option, manager)
+        self.assertIn(r'HKCU\Software\Microsoft\Windows\CurrentVersion\Run', manager)
+        self.assertIn('ZyntaxAI-Native-Portable', manager)
+        self.assertIn('/t REG_SZ', manager)
+        self.assertIn('reg add "%AUTOSTART_KEY%" /v "%AUTOSTART_VALUE%"', manager)
+        self.assertIn('reg delete "%AUTOSTART_KEY%" /v "%AUTOSTART_VALUE%" /f', manager)
+        self.assertIn('reg query "%AUTOSTART_KEY%" /v "%AUTOSTART_VALUE%"', manager)
+        self.assertIn(r'%~dp0Launch-ZyntaxAI.cmd', manager)
+        self.assertIn('/d /c', manager)
+        self.assertNotIn('reg add "HKLM', manager.lower())
+        self.assertNotIn('schtasks /create', manager.lower())
+        self.assertNotIn('runas', manager.lower())
+        self.assertNotIn('executionpolicy', manager.lower())
+
+    def test_portable_launcher_unchanged_and_preserves_data(self):
+        launcher = (ROOT / 'runtime/Launch-ZyntaxAI.cmd').read_text(encoding='utf-8')
+        self.assertIn('ZYNTAX_DATA_DIR=%PORTABLE_ROOT%Data', launcher)
+        self.assertIn(r'WEBVIEW2_USER_DATA_FOLDER=%PORTABLE_ROOT%Data\WebView2', launcher)
+        self.assertIn('start "" "%ZYNTAX_EXE%" %*', launcher)
+        self.assertEqual((ROOT / 'BUILDER_REVISION').read_text().strip(), 'r5')

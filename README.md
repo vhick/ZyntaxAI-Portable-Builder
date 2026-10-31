@@ -1,6 +1,26 @@
-# ZyntaxAI Native Portable Builder v1.2 (PublisherFix)
+# ZyntaxAI Native Portable Builder v1.4 (Tauri LocalAppData Fix)
 
 **Independent, unsigned, Windows x64 native portable builder.** Upstream: https://github.com/TheHolyOneZ/ZyntaxAI. `WORKFLOW_MODE=NATIVE`. This repository is an unofficial builder, **not** the developer's repository, and does not need a fork. The ZIP kit does **not** contain an application binary: GitHub Actions compiles one from the latest official stable upstream release.
+
+## v1.4 fix — prevent Tauri creating `%LOCALAPPDATA%\dev.theholyonez.zyntaxai`
+
+The Windows folder reported after v1.3 is Tauri's default application-local WebView directory, not the app's `ZYNTAX_DATA_DIR` storage. Setting `WEBVIEW2_USER_DATA_FOLDER` only redirects Microsoft's WebView2 engine; the older Tauri 2.11.5 framework can still create its default app-local directory before WebView2 starts.
+
+**Source-level fix:** During patching, set `create: false` on BOTH original `main` and `overlay` windows in `src-tauri/tauri.conf.json`. In `src-tauri/src/lib.rs`, manually create both original windows using the pinned Tauri version's `WebviewWindowBuilder::from_config(...)` and `.data_directory(<Data>\WebView2)`. All original window options (size, URLs, transparency, focus, overlay, taskbar) remain in their original config; no layout is reimplemented. The Rust code refuses to start without an absolute `ZYNTAX_DATA_DIR` **before the logging system initializes** rather than silently writing to the host. No unsupported `appDirectoriesOverride`, symlink, service, administrator permission, or registry redirection is needed.
+
+The bundled manager retains choices 5–7 for autostart and adds **8 = Inspect leftover LocalAppData folder**. That option attempts to remove it **only if empty** and after confirmation. A nonempty directory is deliberately left untouched for user review. Close the tray application fully before cleanup; never delete your portable `Data` folder.
+
+**This requires a fresh GitHub Actions compilation**: replacing only the manager cannot fix code already compiled into `App\zyntax.exe`. Revision **r5** generates a distinct release tag. A live Windows clean-host launch and successful publisher run are still required to confirm the fix.
+
+## v1.3 update — optional Windows login autostart in the portable manager
+
+The packaged `ZyntaxAI-Manager.cmd` now exposes **5 = Enable**, **6 = Disable** and **7 = Status** for **Windows login autostart**, while retaining every previous menu feature. It edits only `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` value `ZyntaxAI-Native-Portable` and never requests administrator privileges. The entry launches `Launch-ZyntaxAI.cmd` with the portable environment variables, **not** `App\zyntax.exe` directly. Status shows the registered command, and enabling an existing registration explicitly asks whether to replace it. Disabling requests confirmation and removes only that one value. No services, scheduled tasks or startup-folder copies are created. This system integration is **opt-in**, not installed at build time or automatically on first launch. A CMD window may briefly appear at login. If you move the portable folder, enable again to update the absolute path. Choose Disable before retiring the portable app; do not remove the `Data` folder when you upgrade.
+
+The original upstream in-app autostart plugin remains disabled because it bypasses the portable launcher and could lose the environment-specific `Data` redirection. The in-app autostart toggle may therefore report that startup is disabled even when the **manager-owned** Windows registration exists. Use the manager's option 7 as the source of truth for the registry entry. Windows Startup Apps settings can independently disable a registered item.
+
+For users with an already working v1.2 portable EXE, it is **not necessary to rebuild the application just to obtain these menu choices**: copy this builder kit's `runtime/ZyntaxAI-Manager.cmd` to the root of the existing extracted portable application, replacing its old manager. Keep `Launch-ZyntaxAI.cmd`, `App` and `Data` intact. Rebuilding using this complete kit is only needed if you want the v1.3 manager included in future published ZIP releases.
+
+Builder revision for v1.3 was **r4**; v1.4 uses **r5**.
 
 ## v1.2 fix — shared release publisher rejects its own draft on Windows
 
@@ -10,9 +30,9 @@ The shared publisher v1 source uses `checksum_path.write_text(sums, encoding="ut
 
 **v1.2 fix:** This builder checks out the *original shared publisher* `vhick/portable-release-publisher` `v1` into the temporary `.work/publisher` directory. It applies a strictly checked one-line Windows compatibility patch to its script on the Actions runner: use `checksum_path.write_bytes(sums.encode("utf-8"))`. The entire existing publisher implementation (draft creation, SHA-256, duplicate protection, and release verification) stays intact. The publisher repository is not forked or modified. The action runs locally with `uses: ./.work/publisher` after checkout and patching, so there is still exactly ONE shared publisher responsible for releases. A future fix in the shared publisher repository should supersede this temporary compatibility shim.
 
-Builder revision is now **r3**, with a fresh fingerprint and release tag. The previously failed **r2 draft is intentionally untouched**; there is no automatic draft deletion. You may inspect it through your GitHub Releases management interface while signed in, and remove it manually *only after verifying it is the failed incomplete draft*. It is not necessary to remove it to run v1.2.
+Builder revision in the v1.2 fix was **r3**; the current v1.4 revision is **r5**. The previously failed **r2 draft is intentionally untouched**; there is no automatic draft deletion. You may inspect it through your GitHub Releases management interface while signed in, and remove it manually *only after verifying it is the failed incomplete draft*. It is not necessary to remove it to run v1.4.
 
-**Upgrade using GitHub Desktop:** Extract this entire v1.2 ZIP over the local clone of your `ZyntaxAI-Portable-Builder` repo; replace earlier builder files but keep `.git`. Commit `Fix Windows release publisher checksum verification (r3)` and Push origin. On GitHub.com → Actions → ZyntaxAI Native Portable - Build and Publish → Run workflow with `dry_run` unchecked. A successful run publishes both ZIPs plus `SHA256SUMS.txt` directly to Releases.
+**Upgrade using GitHub Desktop:** Extract this entire v1.4 ZIP over the local clone of your `ZyntaxAI-Portable-Builder` repo; replace earlier builder files but keep `.git`. Commit `Fix Tauri LocalAppData leakage and keep autostart manager (r5)` and Push origin. On GitHub.com → Actions → ZyntaxAI Native Portable - Build and Publish → Run workflow with `dry_run` unchecked. A successful run publishes both ZIPs plus `SHA256SUMS.txt` directly to Releases.
 
 ## What you get
 
@@ -37,7 +57,7 @@ The builder has a manual trigger only. No schedules or push triggers, no `action
 
 ## Storage audit — paths and fixes
 
-**Important framework compatibility:** ZyntaxAI v1.0.2 locks **Tauri 2.11.5**. Tauri introduced `app.appDirectoriesOverride` only in **2.12.0** (September 2026). This builder intentionally avoids adding that incompatible setting and instead uses Microsoft's documented, process-local WebView2 directory override. The host-profile window-state plugin is disabled. This preserves critical user data while leaving the small potential for a Tauri-created empty AppData directory; a fully zero-trace build is **not verified**.
+**Important framework compatibility:** ZyntaxAI v1.0.2 locks **Tauri 2.11.5**. Tauri introduced `app.appDirectoriesOverride` only in **2.12.0** (September 2026). This builder intentionally avoids adding that incompatible setting and instead uses Microsoft's documented, process-local WebView2 directory override. The host-profile window-state plugin is disabled, and the two original Tauri windows now use manual creation with explicit `Data\WebView2` storage. This addresses the observed Tauri-created empty LocalAppData folder; complete zero-trace behavior is **not verified**.
 
 | Original behavior / relevant component | Portable behavior | Evidence in upstream source |
 | --- | --- | --- |
@@ -46,21 +66,21 @@ The builder has a manual trigger only. No schedules or push triggers, no `action
 | SQLite database / journal files in OS data directory | `Data\data\history.db`, including `-wal` and `-shm` while needed | `paths.rs`, `history.rs` |
 | Rotating log files in OS data directory | `Data\data\logs\` | `src-tauri/src/logging.rs` |
 | API keys through Windows Credential Manager, service `dev.theholyonez.zyntaxai`; fallback only when keychain unavailable | Portable code forces developer's existing `SecretStore::file_backed` AES-GCM store: `Data\data\secrets.key` and `Data\data\secrets.enc`. | `crates/zyntax-store/src/secrets.rs`, `src-tauri/src/state.rs` |
-| Tauri/WebView2 browser profile normally defaults to OS profile; window-state plugin saves `.window-state.json` in OS application config | Launcher sets documented `WEBVIEW2_USER_DATA_FOLDER` to `Data\WebView2`. Disable window-state plugin to prevent its host AppData writes. **Tauri 2.11 may still create an empty application-local folder in the host profile.** | `src-tauri/src/lib.rs`, Windows WebView2 documentation; upstream Tauri 2.11 lockfile |
-| Tauri Windows autostart plugin uses Windows user Run registration (typically `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`). | Do not register plugin; `set_autostart` returns a clear error and `is_autostart_enabled` returns false. | `src-tauri/src/lib.rs`, `commands.rs`, `src-tauri/Cargo.toml` |
+| Tauri/WebView2 browser profile normally defaults to OS profile; window-state plugin saves `.window-state.json` in OS application config | Launcher sets documented `WEBVIEW2_USER_DATA_FOLDER` to `Data\WebView2`. Disable window-state plugin and set `create: false` on both windows, then use `WebviewWindowBuilder::from_config(...).data_directory(<Data>\WebView2)` so Tauri does not create its default local profile. Existing older-build leftovers require manual review. | `src-tauri/src/lib.rs`, Windows WebView2 documentation; upstream Tauri 2.11 lockfile |
+| Tauri Windows autostart plugin uses Windows user Run registration (typically `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`). | Disable the upstream in-app plugin so it cannot launch the EXE without the portable environment. The optional **manager-owned** HKCU Run value `ZyntaxAI-Native-Portable` invokes `Launch-ZyntaxAI.cmd`. Options 5/6 add/remove only this value; 7 shows it. | `src-tauri/src/lib.rs`, `commands.rs`, `runtime/ZyntaxAI-Manager.cmd` |
 | Tauri updater downloads and installs officially signed installer-based updates | Do not register updater plugin. In-app update-check/install commands return a clear portable-edition message; startup checks disabled. | `src-tauri/src/updates.rs`, `commands.rs`, `lib.rs` |
 | Windows global hotkey, clipboard access, notifications and WebView2 runtime | Keep normal supported Windows integrations without installing dedicated service, driver, or scheduled task. The OS WebView2 runtime remains a system dependency. | Tauri/plugin configuration, `crates/zyntax-platform/` |
 
 **Privacy caution:** portable encrypted API secrets keep the encryption key next to encrypted data, so anyone who copies the entire `Data` folder can potentially decrypt stored credentials. This differs from storing secrets in Windows Credential Manager. Use drive-level encryption where appropriate. Keys saved by an *installed* ZyntaxAI instance in Credential Manager do **not** automatically move into the portable edition. Re-enter them.
 
-**No zero-trace guarantee:** Tauri 2.11 may create an otherwise empty application-local directory in `%LOCALAPPDATA%` even with WebView2 cache redirected. Windows may also maintain OS caches, notification state, global shortcut registrations (while running), temporary files, Defender/SmartScreen metadata, execution histories, and WebView2 runtime infrastructure. These are not application-specific writable files we can safely eliminate. No administrator privilege or permanent registry change is required by this builder's launcher.
+**No zero-trace guarantee:** The v1.4 source patch should prevent Tauri from creating its default application-local WebView directory, but it has not yet been verified through a clean Windows launch; existing folders from previous builds remain until inspected. Windows may also maintain OS caches, notification state, global shortcut registrations (while running), temporary files, Defender/SmartScreen metadata, execution histories, and WebView2 runtime infrastructure. These are not application-specific writable files we can safely eliminate. The plain launcher makes no permanent registry changes. **Only if you choose manager option 5** does it create one reversible HKCU startup value; option 6 removes it.
 
 ### Layout of the produced portable ZIP
 
 ```text
 ZyntaxAI Native Portable/
   Launch-ZyntaxAI.cmd             <- Recommended start method
-  ZyntaxAI-Manager.cmd            <- Small interactive console
+  ZyntaxAI-Manager.cmd            <- Interactive console with autostart and legacy-folder inspection
   README-PORTABLE.txt
   LICENSE.txt
   SOURCE-CODE.txt
@@ -85,7 +105,10 @@ ZyntaxAI Native Portable/
 4. Double-click the new `Launch-ZyntaxAI.cmd`. Verify settings, usage records, and API-key availability.
 5. Keep your old copy as backup until verified. **Never copy a freshly uninitialized `Data` folder over existing real data.**
 
-Running `App\zyntax.exe` directly bypasses `ZYNTAX_DATA_DIR` and must be avoided. The WebView2 directory override is passed only by the CMD launcher, and the app's own Rust settings/history would revert to the OS profile. The launcher never adds permanent environment variables.
+Running `App\zyntax.exe` directly bypasses `ZYNTAX_DATA_DIR` and must be avoided. In v1.4, the compiled application checks for an absolute `ZYNTAX_DATA_DIR` **before initializing its logger** and exits if missing; use the launcher. The launcher never adds permanent environment variables.
+
+**Manager commands:** Open `ZyntaxAI-Manager.cmd`, select **5** to register Windows autostart, **6** to remove it, **7** to inspect its current registration, or **8** to inspect the old LocalAppData folder (remove only if empty). The registry location is `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, value `ZyntaxAI-Native-Portable`. This is only for the current signed-in user and does **not** start a Windows service or run before login. If the portable folder is moved, select 5 again. Before deleting the portable folder, select 6. The app's own in-app "Start with Windows" toggle remains intentionally unavailable; the manager owns this optional feature.
+
 
 ## GitHub Desktop: first-time setup
 
@@ -98,7 +121,7 @@ Running `App\zyntax.exe` directly bypasses `ZYNTAX_DATA_DIR` and must be avoided
 7. Open **Actions → ZyntaxAI Native Portable - Build and Publish → Run workflow**. Keep `dry_run` unchecked to publish, or enable it for a first validation-only build.
 8. Select **Run workflow**. Open the run to inspect each step. It is normal for the first Rust/Node compilation to take longer; the workflow timeout is 120 minutes.
 9. Once completed successfully, open the builder repository's **Releases** page (not `Actions → Artifacts`). Download `ZyntaxAI-Native-Portable-...zip`. The same release includes the patched corresponding-source ZIP and `SHA256SUMS.txt`.
-10. In a future update, click **Run workflow** again. The workflow checks official stable releases on every run and skips known identical publisher-managed releases. When you intentionally modify portability or packaging scripts, increment `BUILDER_REVISION` to the next revision (currently `r3`) in GitHub Desktop, commit and push.
+10. In a future update, click **Run workflow** again. The workflow checks official stable releases on every run and skips known identical publisher-managed releases. When you intentionally modify portability or packaging scripts, increment `BUILDER_REVISION` to the next revision (currently `r5`) in GitHub Desktop, commit and push.
 
 There is **no upstream fork** and no manual ZIP upload. The producer's source remains unchanged upstream; all patches are applied to a temporary checkout on the GitHub runner.
 
@@ -131,9 +154,14 @@ The upstream project is **GPL-3.0-or-later**. Public redistribution of modified 
 
 Building source obtained from third parties runs their build scripts in the same Windows job as the later GitHub Release publishing operation. This is a conscious security tradeoff to avoid Actions artifact storage and duplicate jobs. Only enable this workflow for upstream code you trust. To isolate untrusted code properly, use separate restricted build and release jobs, requiring an artifact hand-off or other secure transfer; that would no longer meet the strict zero-Action-artifact approach. Avoid running this builder from untrusted pull requests. GitHub-hosted Windows runners are ephemeral, but this does not make third-party code inherently safe.
 
-The scripts are plain Python and CMD, with readable commands. No encoded PowerShell, disabled antivirus, UAC prompts, stealth scheduled tasks, registry hijacking, or permanent environment edits. The resulting EXE is unsigned unless you provide existing legitimate signing infrastructure separately; AV/SmartScreen warnings may still occur. The publisher action operates without AV exclusions.
+The scripts are plain Python and CMD, with readable commands. No encoded PowerShell, disabled antivirus, UAC prompts, stealth scheduled tasks, registry hijacking, or permanent environment edits. The manager uses a single documented HKCU Run entry only at the user's request; it can be removed with option 6. The resulting EXE is unsigned unless you provide existing legitimate signing infrastructure separately; AV/SmartScreen warnings may still occur. The publisher action operates without AV exclusions.
 
 ## Local validation and troubleshooting
+
+- **Autostart registration missing:** Use manager option 7 and check the displayed Windows Run command. If the application was moved, use option 5 to replace the old path. Confirm Windows Settings > Apps > Startup has not disabled ZyntaxAI.
+- **Autostart works but settings are missing:** The startup entry must call `Launch-ZyntaxAI.cmd`, not `App\zyntax.exe`; use option 5 to repair it.
+- **Autostart removal before uninstall:** Use option 6 before removing the portable directory. Only the named `ZyntaxAI-Native-Portable` Run value is removed; there are no services or scheduled tasks to clean up.
+
 
 `python -m unittest discover -s tests -v` (also run automatically before source retrieval in GitHub Actions) tests the builder's patch logic against upstream-layout fixtures, packaging and ZIP checks. The CI run additionally verifies the actual upstream checkout, Rust/TypeScript compile, ZIP integrity, and publisher delivery.
 
@@ -151,10 +179,10 @@ The scripts are plain Python and CMD, with readable commands. No encoded PowerSh
 - **Nothing appears after launch:** check `Data\data\logs`; ensure you used `Launch-ZyntaxAI.cmd`, the storage drive is writable, and no installed ZyntaxAI instance is already holding the single-instance lock.
 - **Corrupt database after crash:** restore a backup of `Data` after completely exiting the app. Avoid copying `history.db` while it is in use; SQLite may have active `-wal` and `-shm` sidecar files.
 
-## Validation status as of 2026-10-31 (v1.2)
+## Validation status as of 2026-10-31 (v1.4)
 
 - Source audit of the official tagged v1.0.2 code: **performed via live upstream raw files**.
 - Shared publisher @v1 interface and its release-protection logic: **inspected via live upstream raw files**.
 - Builder Python compilation, workflow YAML parsing, package-content verification, controlled source-patch tests, and ZIP fixture simulation: **performed locally** (see `VALIDATION.md`).
-- Live Windows Rust/Tauri compilation and ZIP packaging: **CONFIRMED by the uploaded v1.1 GitHub Actions log.**
-- Windows app execution, clean-host footprint and successfully published GitHub release with this v1.2 checksum fix: **NOT YET CONFIRMED; require a new live run.**
+- Live Windows Rust/Tauri compilation and ZIP packaging: **CONFIRMED for an earlier revision by the uploaded v1.1 GitHub Actions log**. This v1.4 window-construction change has **not** undergone a live build.
+- Windows app execution, clean-host footprint and successfully published GitHub release with this v1.4 patch and v1.2 checksum fix: **NOT YET CONFIRMED; require a new live run.**

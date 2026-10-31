@@ -1,4 +1,4 @@
-# Validation record — 2026-10-31 (v1.2, Windows release-publisher fix)
+# Validation record — 2026-10-31 (v1.3, optional Windows login autostart)
 
 ## Evidence from user’s second Windows GitHub Actions run
 
@@ -30,3 +30,23 @@
 - No actual Windows execution of the compiled application was performed here. The uploaded run verifies Windows COMPILATION only.
 - Live GitHub Releases publishing with this v1.2 patch has not been run; verify the new r3 draft creation, upload, SHA-256 checks and publishing in the next Actions run.
 - Windows clean-host data footprint and AV heuristics remain untested.
+
+## v1.3 autostart manager validation
+
+- Manager menu includes 5 = enable, 6 = disable, 7 = status; existing choices retained.
+- The integration targets only `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` / `ZyntaxAI-Native-Portable` and never uses admin, tasks, or services.
+- It points at `Launch-ZyntaxAI.cmd`, not at `App\zyntax.exe`, so the launcher's portable data environment applies.
+- Registry registration is opt-in, has replacement and removal confirmations, and is reversible.
+- Static source checks and ZIP packaging tests performed locally. Actual Windows `reg add` / `reg query` / `reg delete` behavior and successful Windows login launch are **NOT VERIFIED** in this non-Windows test environment; confirm on a real Windows user account.
+- Live GitHub Actions compilation/publishing for builder revision r4 is **NOT VERIFIED**. Earlier successful compilation evidence is from r2.
+
+## v1.4 Tauri host LocalAppData fix (2026-10-31)
+
+- Observed defect: v1.3 can create `%LOCALAPPDATA%\dev.theholyonez.zyntaxai` even though its CMD launcher sets `WEBVIEW2_USER_DATA_FOLDER`; Tauri's own default data-directory creation occurs before the Microsoft WebView2 override.
+- Source evidence: stable upstream v1.0.2 contains two auto-created windows (`main`, `overlay`) and a `.setup` hook; Tauri 2.11.5 supports `WindowConfig.create=false`, `WebviewWindowBuilder::from_config`, and `data_directory(PathBuf)`.
+- Revision r5 sets both `create=false` and creates both windows from their unchanged original configurations with explicit `Data\WebView2` storage. Does not edit the base framework or upgrade the lockfile.
+- The manager adds choice 8 to inspect the existing residual LocalAppData directory; `rmdir` (no `/s`) can remove an empty directory after confirmation, never nonempty user data.
+- These are static and simulated checks; no actual Windows compile or clean-host test of r5 has yet occurred.
+- Existing folders from prior portable versions are not removed automatically. Third-party Windows caches and other OS bookkeeping are beyond this portability redirection.
+
+- Added early environment validation before `logging::init()` after inspecting upstream `logging.rs` and `Paths::from_env()`. A direct EXE launch without ZYNTAX_DATA_DIR should no longer create settings/logs in the host profile.

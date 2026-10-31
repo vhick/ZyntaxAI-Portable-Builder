@@ -34,11 +34,21 @@ def apply(root: Path) -> None:
         raise RuntimeError('Unknown upstream Tauri app identifier; refusing portability patch')
     if settings.get('app', {}).get('appDirectoriesOverride') is not None:
         raise RuntimeError('Upstream now overrides Tauri storage; review before building')
-    # The official upstream lockfile pins Tauri 2.11.5; appDirectoriesOverride was
-    # introduced in 2.12.0. Never inject an unsupported configuration field.
-    # WEBVIEW2_USER_DATA_FOLDER is passed by the launcher as a documented WebView2
-    # environment override. Disable the window-state plugin below because it would
-    # otherwise write to the host's Tauri app-config directory.
+    # Tauri 2.11.5 creates %LOCALAPPDATA%/dev.theholyonez.zyntaxai when
+    # auto-created windows get the framework's default data_directory. The
+    # WebView2 environment variable alone cannot stop Tauri creating this path.
+    # Stop automatic creation; create BOTH original windows manually in setup
+    # with WebviewWindowBuilder.data_directory set to the portable Data folder.
+    # Do not alter their labels, sizing, overlay properties, or other settings.
+    windows = settings.get('app', {}).get('windows', [])
+    if not isinstance(windows, list) or len(windows) != 2 or {w.get('label') for w in windows} != {'main', 'overlay'}:
+        raise RuntimeError('Unrecognized Tauri windows layout; review upstream before portability patch')
+    for window in windows:
+        if window.get('dataDirectory') or window.get('create') is False:
+            raise RuntimeError('Upstream window creation/data directory was changed; review before patch')
+        window['create'] = False
+    # Tauri 2.11.5 does not support appDirectoriesOverride. Use its existing
+    # manual window builder instead of forcing unsupported configuration.
     settings['bundle']['createUpdaterArtifacts'] = False
     config_path.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + '\n', encoding='utf-8', newline='\n')
 
@@ -110,9 +120,53 @@ pub async fn install_update(_app: AppHandle) -> CommandResult<()> {
         '')
     if 'tauri_plugin_window_state::Builder' in lib.read_text(encoding='utf-8'):
         raise RuntimeError('Window-state plugin unexpectedly remains registered')
+    # Fail closed *before* logging::init(): upstream logging resolves Paths
+    # immediately, so a direct launch without the portable environment would
+    # otherwise create directories in the real host profile.
+    replace_one(lib,
+        '    logging::init();',
+        '''    // Native portable: require portable paths BEFORE the logger writes files.
+    let portable_data = std::env::var_os("ZYNTAX_DATA_DIR").unwrap_or_else(|| {
+        eprintln!("Use Launch-ZyntaxAI.cmd to run the portable application.");
+        std::process::exit(2);
+    });
+    if !std::path::PathBuf::from(portable_data).is_absolute() {
+        eprintln!("Portable Data path must be absolute.");
+        std::process::exit(2);
+    }
+    logging::init();''')
+    # Both original webviews must have an explicit data_directory BEFORE build.
+    # The Tauri 2.11 framework otherwise creates its default app-local directory
+    # even if WEBVIEW2_USER_DATA_FOLDER overrides the WebView2 engine afterwards.
+    replace_one(lib,
+        '            tray::install(app)?;',
+        """            // Native portable: do not create Tauri's default LocalAppData folder.
+            // Both configured windows have create:false in tauri.conf.json.
+            // Preserve their original config while overriding only webview storage.
+            let portable_root = std::env::var_os("ZYNTAX_DATA_DIR").ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Launch ZyntaxAI using Launch-ZyntaxAI.cmd (missing ZYNTAX_DATA_DIR)",
+                )
+            })?;
+            let portable_root = std::path::PathBuf::from(portable_root);
+            if !portable_root.is_absolute() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "ZYNTAX_DATA_DIR must be an absolute directory",
+                ).into());
+            }
+            let browser_data = portable_root.join("WebView2");
+            std::fs::create_dir_all(&browser_data)?;
+            for window_config in &app.config().app.windows {
+                tauri::WebviewWindowBuilder::from_config(app, window_config)?
+                    .data_directory(browser_data.clone())
+                    .build()?;
+            }
+            tray::install(app)?;""")
     # Ensure the main entry still uses the supported Tauri-generated frontend/context.
     assert '.build(tauri::generate_context!())' in lib.read_text(encoding='utf-8')
-    print('Portable patch applied: upstream data API, file-backed credentials, WebView2 runtime override, disabled window-state persistence, guarded OS integration and updates.')
+    print('Portable patch applied: both Tauri windows create=false with explicit Data/WebView2 storage, file credentials, guarded OS integration/updates.')
 
 
 if __name__ == '__main__':
