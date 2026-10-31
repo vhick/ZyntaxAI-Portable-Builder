@@ -1,6 +1,14 @@
-# ZyntaxAI Native Portable Builder v1.0
+# ZyntaxAI Native Portable Builder v1.1 (PatchFix)
 
 **Independent, unsigned, Windows x64 native portable builder.** Upstream: https://github.com/TheHolyOneZ/ZyntaxAI. `WORKFLOW_MODE=NATIVE`. This repository is an unofficial builder, **not** the developer's repository, and does not need a fork. The ZIP kit does **not** contain an application binary: GitHub Actions compiles one from the latest official stable upstream release.
+
+## v1.1 fix — GitHub Actions regex error
+
+The v1.0 Actions run cloned official ZyntaxAI `v1.0.2` at `6e1213095a654097664aeffa067aa28042051de6` but failed in `scripts/apply_portable.py` before Rust compilation: `src-tauri/src/commands.rs (regex matched 0 times)`. The upstream release has a blank line between its two autostart functions, while the old combined patch incorrectly expected them to touch. The old unit-test fixture also omitted this blank line.
+
+**Correction:** Patch the two functions independently with an anchored Rust-function matcher, test the upstream blank-line layout, and increment `BUILDER_REVISION` to `r2` (preventing tag collisions). Unexpected future upstream source changes still fail the patch rather than generating an uncertain portable build.
+
+**Upgrade an existing GitHub Desktop repository:** Extract this entire v1.1 kit into your existing local builder clone, replacing files; do not delete its `.git` folder (not included in this kit). GitHub Desktop → Commit `Fix ZyntaxAI stable source patch (r2)` → Push origin. Then GitHub.com → Actions → ZyntaxAI Native Portable - Build and Publish → Run workflow. The failed previous run created no release to clean up. This ZIP contains no application data.
 
 ## What you get
 
@@ -123,7 +131,7 @@ The scripts are plain Python and CMD, with readable commands. No encoded PowerSh
 
 ## Local validation and troubleshooting
 
-`python -m unittest discover -s tests -v` tests the builder's patch logic against upstream-layout fixtures, packaging and ZIP checks. The CI run additionally verifies the actual upstream checkout, Rust/TypeScript compile, ZIP integrity, and publisher delivery.
+`python -m unittest discover -s tests -v` (also run automatically before source retrieval in GitHub Actions) tests the builder's patch logic against upstream-layout fixtures, packaging and ZIP checks. The CI run additionally verifies the actual upstream checkout, Rust/TypeScript compile, ZIP integrity, and publisher delivery.
 
 **If the build fails:**
 
@@ -139,7 +147,7 @@ The scripts are plain Python and CMD, with readable commands. No encoded PowerSh
 - **Nothing appears after launch:** check `Data\data\logs`; ensure you used `Launch-ZyntaxAI.cmd`, the storage drive is writable, and no installed ZyntaxAI instance is already holding the single-instance lock.
 - **Corrupt database after crash:** restore a backup of `Data` after completely exiting the app. Avoid copying `history.db` while it is in use; SQLite may have active `-wal` and `-shm` sidecar files.
 
-## Validation status as of 2026-10-31
+## Validation status as of 2026-10-31 (v1.1)
 
 - Source audit of the official tagged v1.0.2 code: **performed via live upstream raw files**.
 - Shared publisher @v1 interface and its release-protection logic: **inspected via live upstream raw files**.

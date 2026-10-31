@@ -44,6 +44,7 @@ pub fn set_autostart(app: AppHandle, enabled: bool) -> CommandResult<()> {
     };
     result.map_err(|err| simple_error("autostart_failed", err.to_string(), "error"))
 }
+
 #[tauri::command]
 pub fn is_autostart_enabled(app: AppHandle) -> bool {
     app.autolaunch().is_enabled().unwrap_or(false)
@@ -79,6 +80,8 @@ use tauri_plugin_window_state::StateFlags;
             self.assertIn('next.system.check_for_updates = false', state)
             cmds = (rust / 'commands.rs').read_text()
             self.assertIn('portable_autostart_disabled', cmds)
+            self.assertNotIn('app.autolaunch()', cmds)
+            self.assertIn('pub fn is_autostart_enabled(app: AppHandle)', cmds)
             self.assertIn('portable_update_disabled', cmds)
             lib = (rust / 'lib.rs').read_text()
             self.assertNotIn('.plugin(tauri_plugin_updater::Builder', lib)
@@ -87,6 +90,59 @@ use tauri_plugin_window_state::StateFlags;
             self.assertNotIn('use tauri_plugin_window_state::StateFlags;', lib)
             with self.assertRaises(RuntimeError):
                 apply_portable.apply(src)  # must fail on already modified source
+
+    def test_v102_autostart_regression_real_source_snippet(self):
+        """Official release includes a blank line and nested Rust blocks.
+
+        The combined v1.0 matcher incorrectly assumed both commands were
+        adjacent, which is why that workflow failed at regex matched 0 times.
+        """
+        original = """#[tauri::command]
+pub fn set_autostart(app: AppHandle, enabled: bool) -> CommandResult<()> {
+    let manager = app.autolaunch();
+    let result = if enabled {
+        manager.enable()
+    } else {
+        manager.disable()
+    };
+
+    result.map_err(|err| {
+        simple_error(
+            "autostart_failed",
+            err.to_string(),
+            "This is the official upstream-style multiline function body",
+        )
+    })
+}
+
+#[tauri::command]
+pub fn is_autostart_enabled(app: AppHandle) -> bool {
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+#[tauri::command]
+pub fn app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_owned()
+}
+"""
+        with TemporaryDirectory() as temp:
+            path = Path(temp) / 'commands.rs'
+            path.write_text(original, encoding='utf-8')
+            apply_portable.replace_pattern(
+                path,
+                r'(?m)^#\[tauri::command\]\npub fn set_autostart\(app: AppHandle, enabled: bool\) -> CommandResult<\(\)> \{.*?^\}',
+                'REPLACED_AUTOSTART',
+            )
+            apply_portable.replace_pattern(
+                path,
+                r'(?m)^#\[tauri::command\]\npub fn is_autostart_enabled\(app: AppHandle\) -> bool \{.*?^\}',
+                'REPLACED_CHECK',
+            )
+            final = path.read_text(encoding='utf-8')
+            self.assertEqual(final.count('REPLACED_AUTOSTART'), 1)
+            self.assertEqual(final.count('REPLACED_CHECK'), 1)
+            self.assertIn('pub fn app_version()', final)
+            self.assertNotIn('app.autolaunch()', final)
 
     def test_tag_and_asset_names_are_deterministic(self):
         meta = {'version': '1.0.2', 'revision': 'r1'}

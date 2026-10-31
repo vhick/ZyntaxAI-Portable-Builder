@@ -36,6 +36,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Run builder regression tests before retrieving upstream
+        run: python -m unittest discover -s tests -v
+
       - name: Resolve latest stable release and skip if already published
         id: resolve
         env:

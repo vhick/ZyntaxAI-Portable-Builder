@@ -62,18 +62,25 @@ def apply(root: Path) -> None:
 
     commands = root / 'src-tauri/src/commands.rs'
     replace_one(commands, 'use tauri_plugin_autostart::ManagerExt;\n', '')
+    # Patch each top-level function independently. The stable v1.0.2 source has
+    # a blank line between these commands; the old combined regex assumed none.
+    # (?m) anchors the function-closing brace, avoiding nested braces.
     replace_pattern(commands,
-        r'#\[tauri::command\]\npub fn set_autostart\(app: AppHandle, enabled: bool\) -> CommandResult<\(\)> \{.*?\n\}\n#\[tauri::command\]\npub fn is_autostart_enabled\(app: AppHandle\) -> bool \{.*?\n\}',
+        r'(?m)^#\[tauri::command\]\npub fn set_autostart\(app: AppHandle, enabled: bool\) -> CommandResult<\(\)> \{.*?^\}',
         '''#[tauri::command]
-pub fn set_autostart(_app: AppHandle, _enabled: bool) -> CommandResult<()> {
+pub fn set_autostart(app: AppHandle, enabled: bool) -> CommandResult<()> {
+    let _ = (app, enabled);
     Err(simple_error(
         "portable_autostart_disabled",
         "Windows autostart is disabled in this portable edition.",
         "Launch ZyntaxAI with Launch-ZyntaxAI.cmd from your portable folder.",
     ))
-}
-#[tauri::command]
-pub fn is_autostart_enabled(_app: AppHandle) -> bool {
+}''')
+    replace_pattern(commands,
+        r'(?m)^#\[tauri::command\]\npub fn is_autostart_enabled\(app: AppHandle\) -> bool \{.*?^\}',
+        '''#[tauri::command]
+pub fn is_autostart_enabled(app: AppHandle) -> bool {
+    let _ = app;
     false
 }''')
     replace_pattern(commands,

@@ -1,4 +1,4 @@
-# Validation record — 2026-10-31
+# Validation record — 2026-10-31 (v1.1)
 
 This records checks performed in a Linux-based preparation environment, NOT a live
 Windows build or a successful GitHub Actions publication.
@@ -16,11 +16,15 @@ Windows build or a successful GitHub Actions publication.
 - WebView2 browser profile uses Microsoft's documented
   `WEBVIEW2_USER_DATA_FOLDER` launcher override.
 
+## Error fixed in v1.1
+
+Uploaded log demonstrates that source cloning and version resolution succeeded, but the portability patch failed because the official stable autostart commands have a blank line between them. Replaced the old combined matcher with two independently anchored matchers. Updated the fixture to reflect the blank line and prevent regression. This is not a substitute for a live Windows build.
+
 ## Tests run locally
 
 - Python script compilation (`python -m compileall -q scripts tests`): passed.
 - Workflow configuration parsed with PyYAML: passed (syntactic check only).
-- 3 Python unit tests (`python -m unittest discover -s tests -v`): passed.
+- 4 Python unit tests (`python -m unittest discover -s tests -v`): passed.
 - ZIP generation and validation with fixture executable/source: passed;
   both ZIP CRCs, manifest entries, and MZ executable-header checks passed.
 - Static check that the workflow contains no `actions/upload-artifact`, has
