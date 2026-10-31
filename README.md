@@ -1,14 +1,18 @@
-# ZyntaxAI Native Portable Builder v1.1 (PatchFix)
+# ZyntaxAI Native Portable Builder v1.2 (PublisherFix)
 
 **Independent, unsigned, Windows x64 native portable builder.** Upstream: https://github.com/TheHolyOneZ/ZyntaxAI. `WORKFLOW_MODE=NATIVE`. This repository is an unofficial builder, **not** the developer's repository, and does not need a fork. The ZIP kit does **not** contain an application binary: GitHub Actions compiles one from the latest official stable upstream release.
 
-## v1.1 fix — GitHub Actions regex error
+## v1.2 fix — shared release publisher rejects its own draft on Windows
 
-The v1.0 Actions run cloned official ZyntaxAI `v1.0.2` at `6e1213095a654097664aeffa067aa28042051de6` but failed in `scripts/apply_portable.py` before Rust compilation: `src-tauri/src/commands.rs (regex matched 0 times)`. The upstream release has a blank line between its two autostart functions, while the old combined patch incorrectly expected them to touch. The old unit-test fixture also omitted this blank line.
+**Verified live result from your second GitHub Actions run:** all build, package and ZIP verification stages passed. Rust/Tauri successfully compiled ZyntaxAI v1.0.2. The shared publisher created a draft but failed its own checksum verification. **No published release resulted.**
 
-**Correction:** Patch the two functions independently with an anchored Rust-function matcher, test the upstream blank-line layout, and increment `BUILDER_REVISION` to `r2` (preventing tag collisions). Unexpected future upstream source changes still fail the patch rather than generating an uncertain portable build.
+The shared publisher v1 source uses `checksum_path.write_text(sums, encoding="utf-8")`. On Windows, standard text-file writing converts LF to CRLF. However, the publisher calculates its expected checksum asset size using `len(sums.encode("utf-8"))` (LF-only). A checksum file for the two ZIPs is consequently **two bytes larger** than its expected size, causing the draft verification to fail.
 
-**Upgrade an existing GitHub Desktop repository:** Extract this entire v1.1 kit into your existing local builder clone, replacing files; do not delete its `.git` folder (not included in this kit). GitHub Desktop → Commit `Fix ZyntaxAI stable source patch (r2)` → Push origin. Then GitHub.com → Actions → ZyntaxAI Native Portable - Build and Publish → Run workflow. The failed previous run created no release to clean up. This ZIP contains no application data.
+**v1.2 fix:** This builder checks out the *original shared publisher* `vhick/portable-release-publisher` `v1` into the temporary `.work/publisher` directory. It applies a strictly checked one-line Windows compatibility patch to its script on the Actions runner: use `checksum_path.write_bytes(sums.encode("utf-8"))`. The entire existing publisher implementation (draft creation, SHA-256, duplicate protection, and release verification) stays intact. The publisher repository is not forked or modified. The action runs locally with `uses: ./.work/publisher` after checkout and patching, so there is still exactly ONE shared publisher responsible for releases. A future fix in the shared publisher repository should supersede this temporary compatibility shim.
+
+Builder revision is now **r3**, with a fresh fingerprint and release tag. The previously failed **r2 draft is intentionally untouched**; there is no automatic draft deletion. You may inspect it through your GitHub Releases management interface while signed in, and remove it manually *only after verifying it is the failed incomplete draft*. It is not necessary to remove it to run v1.2.
+
+**Upgrade using GitHub Desktop:** Extract this entire v1.2 ZIP over the local clone of your `ZyntaxAI-Portable-Builder` repo; replace earlier builder files but keep `.git`. Commit `Fix Windows release publisher checksum verification (r3)` and Push origin. On GitHub.com → Actions → ZyntaxAI Native Portable - Build and Publish → Run workflow with `dry_run` unchecked. A successful run publishes both ZIPs plus `SHA256SUMS.txt` directly to Releases.
 
 ## What you get
 
@@ -16,7 +20,7 @@ After a successful GitHub Actions run, open **your builder repository → Releas
 
 1. `ZyntaxAI-Native-Portable-VERSION-rN-win64.zip` — portable Windows executable, readable launchers and metadata; NO installer.
 2. `ZyntaxAI-Portable-Source-VERSION-rN-win64.zip` — **complete corresponding GPL source** as compiled, with all portability patches and build scripts.
-3. `SHA256SUMS.txt` — automatically created and uploaded by `vhick/portable-release-publisher@v1`.
+3. `SHA256SUMS.txt` — automatically created and uploaded by the `vhick/portable-release-publisher` v1 source checkout, with the one-line Windows checksum compatibility patch.
 
 The builder has a manual trigger only. No schedules or push triggers, no `actions/upload-artifact`, no Git LFS, and no deployment to a second repository. The shared publisher owns the **only** release creation/upload step.
 
@@ -90,19 +94,19 @@ Running `App\zyntax.exe` directly bypasses `ZYNTAX_DATA_DIR` and must be avoided
 3. On the empty GitHub repository page, choose **Set up in Desktop** (or copy the repository URL). Open **GitHub Desktop → File → Clone repository → URL**, paste your builder repo URL, and choose your local folder.
 4. Extract the downloadable **builder kit ZIP** directly into that cloned folder. After extraction, the folder must contain `.github`, `scripts`, `runtime`, `tests`, `README.md`, and `BUILDER_REVISION`. **Do not create or copy a `.git` folder.** The ZIP doesn't contain one; GitHub Desktop owns it.
 5. In GitHub Desktop, verify the changed files. Enter a commit summary such as `Add ZyntaxAI native portable builder` and click **Commit to main**, then **Push origin** (or **Publish repository** if you created the project locally).
-6. On GitHub.com, open your builder repository → **Settings → Actions → General**. Permit GitHub Actions and the required reusable actions. If policy restricts third-party actions, permit `vhick/portable-release-publisher@v1`. The build job explicitly requests `contents: write`; depending on repo-level policy, you may also need to allow workflows with write permissions.
+6. On GitHub.com, open your builder repository → **Settings → Actions → General**. Permit GitHub Actions and the required reusable actions. If policy restricts third-party repositories, allow the official GitHub `actions/checkout` action and checkout of `vhick/portable-release-publisher` v1. The build job explicitly requests `contents: write`; depending on repo-level policy, you may also need to allow workflows with write permissions.
 7. Open **Actions → ZyntaxAI Native Portable - Build and Publish → Run workflow**. Keep `dry_run` unchecked to publish, or enable it for a first validation-only build.
 8. Select **Run workflow**. Open the run to inspect each step. It is normal for the first Rust/Node compilation to take longer; the workflow timeout is 120 minutes.
 9. Once completed successfully, open the builder repository's **Releases** page (not `Actions → Artifacts`). Download `ZyntaxAI-Native-Portable-...zip`. The same release includes the patched corresponding-source ZIP and `SHA256SUMS.txt`.
-10. In a future update, click **Run workflow** again. The workflow checks official stable releases on every run and skips known identical publisher-managed releases. When you intentionally modify portability or packaging scripts, increment `BUILDER_REVISION` from `r1` to `r2` in GitHub Desktop, commit and push.
+10. In a future update, click **Run workflow** again. The workflow checks official stable releases on every run and skips known identical publisher-managed releases. When you intentionally modify portability or packaging scripts, increment `BUILDER_REVISION` to the next revision (currently `r3`) in GitHub Desktop, commit and push.
 
 There is **no upstream fork** and no manual ZIP upload. The producer's source remains unchanged upstream; all patches are applied to a temporary checkout on the GitHub runner.
 
 ### Direct GitHub Releases publisher
 
-Verified reference: `vhick/portable-release-publisher@v1`, a reusable composite GitHub Action accepting `files`, `tag`, `release-title`, `keep-releases`, `prune`, `dry-run` (and `tag-prefix`). The v1 tag was confirmed via the official `raw.githubusercontent.com/.../v1/action.yml` file. Its publisher script checks ZIPs, creates SHA256 sums, uploads a **draft** release directly, verifies asset hashes, then makes it public to people who can see that repository. It refuses inconsistent existing releases and avoids touching unrelated manual releases.
+Verified reference: `vhick/portable-release-publisher` v1, a reusable composite GitHub Action accepting `files`, `tag`, `release-title`, `keep-releases`, `prune`, `dry-run` (and `tag-prefix`). The v1 tag was confirmed via the official `raw.githubusercontent.com/.../v1/action.yml` file. The shared repository remains unchanged; this is a runner-local compatibility correction. Its publisher script checks ZIPs, creates SHA256 sums, uploads a **draft** release directly, verifies asset hashes, then makes it public to people who can see that repository. It refuses inconsistent existing releases and avoids touching unrelated manual releases.
 
-- **Action version:** `@v1` verified and usable. This kit does not claim a full commit-SHA pin, because a trusted exact SHA could not be independently retrieved in the audit environment. For stronger future supply-chain pinning, obtain the full SHA with `git ls-remote https://github.com/vhick/portable-release-publisher.git refs/tags/v1` and replace `@v1` with that verified commit hash; do not invent a SHA.
+- **Action version:** the workflow checks out the public publisher at tag `v1`, applies the one-line Windows checksum patch on the disposable runner, then invokes `uses: ./.work/publisher`. It cannot use unpatched `@v1` on Windows until that publisher fixes the CRLF mismatch. For production, pin the `ref:` to the verified full commit SHA using `git ls-remote https://github.com/vhick/portable-release-publisher.git refs/tags/v1`; do not invent one.
 - **Assets:** `files: dist/*.zip` intentionally includes the finished Windows binary ZIP **and** the complete GPL source ZIP; it cannot accidentally point to the upstream download archive.
 - **Tags:** `portable-vVERSION-uUPSTREAMSHA10-rN-pBUILDERHASH12` includes upstream version, exact commit prefix, explicit builder revision and an automatic fingerprint of build scripts. Non-code README edits don't trigger new releases. Increment revision whenever actual packaging/patching behavior changes; the fingerprint additionally prevents silent tag collisions.
 - **Existing releases:** a fast preflight checks for previously published matching managed release assets; it skips expensive compilation when the exact version/build fingerprint was published. On unexpected existing assets/draft/unmanaged release, it stops safely rather than overwriting.
@@ -147,9 +151,10 @@ The scripts are plain Python and CMD, with readable commands. No encoded PowerSh
 - **Nothing appears after launch:** check `Data\data\logs`; ensure you used `Launch-ZyntaxAI.cmd`, the storage drive is writable, and no installed ZyntaxAI instance is already holding the single-instance lock.
 - **Corrupt database after crash:** restore a backup of `Data` after completely exiting the app. Avoid copying `history.db` while it is in use; SQLite may have active `-wal` and `-shm` sidecar files.
 
-## Validation status as of 2026-10-31 (v1.1)
+## Validation status as of 2026-10-31 (v1.2)
 
 - Source audit of the official tagged v1.0.2 code: **performed via live upstream raw files**.
 - Shared publisher @v1 interface and its release-protection logic: **inspected via live upstream raw files**.
 - Builder Python compilation, workflow YAML parsing, package-content verification, controlled source-patch tests, and ZIP fixture simulation: **performed locally** (see `VALIDATION.md`).
-- Live Windows Rust/Tauri build, WebView2 execution, and remote release upload: **NOT performed in this analysis environment**. A successful GitHub Actions run is required to verify them. Do not treat static test results as evidence of a successful released executable.
+- Live Windows Rust/Tauri compilation and ZIP packaging: **CONFIRMED by the uploaded v1.1 GitHub Actions log.**
+- Windows app execution, clean-host footprint and successfully published GitHub release with this v1.2 checksum fix: **NOT YET CONFIRMED; require a new live run.**

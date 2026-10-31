@@ -40,7 +40,8 @@ def validate():
                 needed = {'ZyntaxAI-patched-source/LICENSE',
                           'ZyntaxAI-patched-source/Cargo.lock',
                           'ZyntaxAI-patched-source/pnpm-lock.yaml',
-                          'portable-builder/scripts/apply_portable.py'}
+                          'portable-builder/scripts/apply_portable.py',
+                          'portable-builder/scripts/fix_shared_publisher.py'}
                 if not needed.issubset(entries):
                     raise RuntimeError(f'GPL source archive missing files: {needed - entries}')
         print(f'Validated {name}: sha256={hashlib.sha256(archive.read_bytes()).hexdigest()}')

@@ -12,6 +12,7 @@ import apply_portable
 import package_release
 import validate_packages
 import resolve_upstream
+import fix_shared_publisher
 
 
 class SourcePatchTests(unittest.TestCase):
@@ -170,7 +171,7 @@ class PackagingTests(unittest.TestCase):
             for name in ['BUILDER_REVISION', '.github/workflows/build-portable.yml',
                          'scripts/resolve_upstream.py', 'scripts/apply_portable.py',
                          'scripts/package_release.py', 'scripts/validate_packages.py',
-                         'scripts/verify_release.py', 'README.md']:
+                         'scripts/verify_release.py', 'scripts/fix_shared_publisher.py', 'README.md']:
                 (root / name).parent.mkdir(parents=True, exist_ok=True)
                 (root / name).write_text('test fixture', encoding='utf-8')
             meta = {'version': '1.0.2', 'revision': 'r1', 'tag': 'portable-v1.0.2-uaaaaa-r1-pbbbbb',
@@ -197,3 +198,43 @@ class PackagingTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SharedPublisherWindowsFixTests(unittest.TestCase):
+    """Regression tests against the real @v1 source pattern seen in GitHub's raw file."""
+
+    def test_checksum_file_is_platform_independent_after_patch(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'scripts').mkdir()
+            (root / 'action.yml').write_text('runs:\n  using: composite\nPUBLISH_FILES: test\n', encoding='utf-8')
+            text = '''def remote_assets_match():
+    pass
+
+def verify_new_draft():
+    pass
+
+checksum_path.write_text(sums, encoding="utf-8")
+'''
+            script = root / 'scripts/publish.py'
+            script.write_text(text, encoding='utf-8')
+            fix_shared_publisher.patch(root)
+            patched = script.read_text(encoding='utf-8')
+            self.assertIn('checksum_path.write_bytes(sums.encode("utf-8"))', patched)
+            self.assertNotIn('checksum_path.write_text(sums, encoding="utf-8")', patched)
+            # Windows text-mode would add two CR bytes for two checksum lines,
+            # while the publisher's expected byte size uses UTF-8 LF only.
+            sums = ('a' * 64 + '  first.zip\n') + ('b' * 64 + '  second.zip\n')
+            self.assertEqual(len(sums.replace('\n', '\r\n').encode()), len(sums.encode()) + 2)
+            self.assertEqual(len(sums.encode()), len(sums.encode('utf-8')))
+            with self.assertRaisesRegex(RuntimeError, 'not found exactly once'):
+                fix_shared_publisher.patch(root)
+
+    def test_unknown_shared_publisher_version_stops_early(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'scripts').mkdir()
+            (root / 'action.yml').write_text('runs:\n  using: composite\nPUBLISH_FILES: test\n', encoding='utf-8')
+            (root / 'scripts/publish.py').write_text('not the audited publisher', encoding='utf-8')
+            with self.assertRaisesRegex(RuntimeError, 'not found exactly once'):
+                fix_shared_publisher.patch(root)

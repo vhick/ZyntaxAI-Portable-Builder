@@ -22,6 +22,7 @@ BUILDER_FILES = [
     'scripts/package_release.py',
     'scripts/validate_packages.py',
     'scripts/verify_release.py',
+    'scripts/fix_shared_publisher.py',
     'runtime/Launch-ZyntaxAI.cmd',
     'runtime/ZyntaxAI-Manager.cmd',
     'runtime/README-PORTABLE.txt',

@@ -89,9 +89,22 @@ jobs:
         if: steps.resolve.outputs.skip != 'true'
         run: python scripts/validate_packages.py
 
+      - name: Check out shared release publisher v1
+        if: steps.resolve.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: vhick/portable-release-publisher
+          ref: v1
+          path: .work/publisher
+          persist-credentials: false
+
+      - name: Fix shared publisher Windows checksum text translation
+        if: steps.resolve.outputs.skip != 'true'
+        run: python scripts/fix_shared_publisher.py .work/publisher
+
       - name: Publish directly to this repository's GitHub Releases
         if: steps.resolve.outputs.skip != 'true'
-        uses: vhick/portable-release-publisher@v1
+        uses: ./.work/publisher
         with:
           files: 'dist/*.zip'
           tag: ${{ steps.resolve.outputs.tag }}

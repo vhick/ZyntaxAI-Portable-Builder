@@ -79,7 +79,7 @@ def package():
         for name in ['BUILDER_REVISION', '.github/workflows/build-portable.yml',
                      'scripts/resolve_upstream.py', 'scripts/apply_portable.py',
                      'scripts/package_release.py', 'scripts/validate_packages.py',
-                     'scripts/verify_release.py', 'runtime/Launch-ZyntaxAI.cmd',
+                     'scripts/verify_release.py', 'scripts/fix_shared_publisher.py', 'runtime/Launch-ZyntaxAI.cmd',
                      'runtime/ZyntaxAI-Manager.cmd', 'runtime/README-PORTABLE.txt',
                      'README.md']:
             add_file(z, ROOT / name, 'portable-builder/' + name)

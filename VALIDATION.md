@@ -1,44 +1,32 @@
-# Validation record — 2026-10-31 (v1.1)
+# Validation record — 2026-10-31 (v1.2, Windows release-publisher fix)
 
-This records checks performed in a Linux-based preparation environment, NOT a live
-Windows build or a successful GitHub Actions publication.
+## Evidence from user’s second Windows GitHub Actions run
 
-## Verified upstream and publisher evidence
+- Official upstream ZyntaxAI `v1.0.2` cloned and patched successfully.
+- `pnpm tauri build --no-bundle --ci` completed successfully, producing `target/release/zyntax.exe`.
+- `ZyntaxAI-Native-Portable-1.0.2-r2-win64.zip` and `ZyntaxAI-Portable-Source-1.0.2-r2-win64.zip` passed SHA-256 and ZIP CRC validation.
+- Shared publisher `vhick/portable-release-publisher@v1` created draft release `portable-v1.0.2-u6e1213095a-r2-p24d319aaf122` but then failed draft verification. It retained the draft; publication did NOT succeed.
 
-- Verified the official ZyntaxAI GitHub release tag `v1.0.2`, Tauri v2 project,
-  `ZYNTAX_DATA_DIR`, native encrypted-file secret backend, OS autostart plugin,
-  installer updater plugin, and GPL-3.0-or-later license from the upstream source.
-- Verified the publisher v1 composite action and its `files`, `tag`,
-  `release-title`, `keep-releases`, `prune`, `dry-run` inputs and its checksum,
-  draft publication, and release-identity safeguards from its source.
-- Confirmed the official Tauri 2.12.0 release introduces `appDirectoriesOverride`;
-  pinned Tauri 2.11.5 cannot be assumed to understand it. Removed that setting.
-- WebView2 browser profile uses Microsoft's documented
-  `WEBVIEW2_USER_DATA_FOLDER` launcher override.
+## Root cause verified against published publisher v1 source
 
-## Error fixed in v1.1
+- The script creates the checksum string with `\n` and calculates its expected UTF-8 encoded byte count.
+- `checksum_path.write_text(sums, encoding="utf-8")` on Windows writes text-mode newline sequences as CRLF, adding one extra byte per checksum line.
+- The publisher subsequently compares actual GitHub asset sizes against the shorter LF-only in-memory size and rejects the draft. Exact HTTP responses from the draft are not included in the uploaded run, but this code path reliably explains the observed mismatch; the failure text can also cover checksum content differences.
+- The correction is limited to replacing that one line with `checksum_path.write_bytes(sums.encode("utf-8"))`, which writes precisely the bytes the publisher verifies.
+- This builder checks out the existing public publisher v1 into `.work/publisher` and applies this one-line patch LOCALLY on the ephemeral Actions runner. The shared publisher repository and tag are not modified. Its existing validation, SHA-256, draft-to-published workflow and duplicate protections are preserved.
+- Revision r3 and changed builder fingerprint select a NEW release tag, leaving the failed r2 draft untouched. Do not auto-delete a failed draft or change immutable published releases.
 
-Uploaded log demonstrates that source cloning and version resolution succeeded, but the portability patch failed because the official stable autostart commands have a blank line between them. Replaced the old combined matcher with two independently anchored matchers. Updated the fixture to reflect the blank line and prevent regression. This is not a substitute for a live Windows build.
+## Local tests
 
-## Tests run locally
+- Python compilation: passed.
+- PyYAML syntax parsing: passed.
+- 6 unit tests including Windows CRLF regression: passed.
+- Synthetic Windows-style checksum-size mismatch reproduced; corrected binary write bytes verified.
+- Source and ZIP fixture packaging/validation: passed.
+- Workflow static checks: one publisher step, second checkout only after package validation, no `actions/upload-artifact`, manual trigger, `contents: write` job scope, no release pruning.
 
-- Python script compilation (`python -m compileall -q scripts tests`): passed.
-- Workflow configuration parsed with PyYAML: passed (syntactic check only).
-- 4 Python unit tests (`python -m unittest discover -s tests -v`): passed.
-- ZIP generation and validation with fixture executable/source: passed;
-  both ZIP CRCs, manifest entries, and MZ executable-header checks passed.
-- Static check that the workflow contains no `actions/upload-artifact`, has
-  manual trigger, scoped contents:write, and calls a single shared publisher: passed.
+## Remaining verification
 
-## Not yet proven
-
-- Windows MSVC/Rust compile of the actual unmodified developer v1.0.2 source
-  after targeted portability patches. This requires the first live GitHub Actions run.
-- Running ZyntaxAI with WebView2 on Windows; recording the precise host profile
-  and registry footprint on a clean Windows user profile.
-- Real remote upload and SHA-256 verification on GitHub Releases.
-- Antivirus heuristic outcome for the resulting unsigned EXE.
-
-Do not report this builder as successfully producing a real Windows binary
-until its GitHub Actions compile and publish steps succeed. If an upstream API
-changes, the explicit-match patch will fail and must be updated.
+- No actual Windows execution of the compiled application was performed here. The uploaded run verifies Windows COMPILATION only.
+- Live GitHub Releases publishing with this v1.2 patch has not been run; verify the new r3 draft creation, upload, SHA-256 checks and publishing in the next Actions run.
+- Windows clean-host data footprint and AV heuristics remain untested.
