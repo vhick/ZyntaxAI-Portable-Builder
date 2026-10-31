@@ -1,0 +1,117 @@
+name: ZyntaxAI Native Portable - Build and Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build ZIPs and validate publisher inputs without creating a release"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zyntaxai-native-portable-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out independent builder
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Resolve latest stable release and skip if already published
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python scripts/resolve_upstream.py
+
+      - name: Patch official source for native portable behavior
+        if: steps.resolve.outputs.skip != 'true'
+        run: python scripts/apply_portable.py .work/upstream
+
+      - name: Set up Node.js
+        if: steps.resolve.outputs.skip != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up pnpm
+        if: steps.resolve.outputs.skip != 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+          run_install: false
+
+      - name: Set up Rust for MSVC x64
+        if: steps.resolve.outputs.skip != 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install locked JavaScript dependencies
+        if: steps.resolve.outputs.skip != 'true'
+        working-directory: .work/upstream
+        run: pnpm install --frozen-lockfile
+
+      - name: Build actual Windows application (no installer)
+        if: steps.resolve.outputs.skip != 'true'
+        working-directory: .work/upstream
+        env:
+          CI: 'true'
+        run: pnpm tauri build --no-bundle --ci
+
+      - name: Package native portable executable and corresponding source
+        if: steps.resolve.outputs.skip != 'true'
+        run: python scripts/package_release.py
+
+      - name: Verify both finished ZIP files
+        if: steps.resolve.outputs.skip != 'true'
+        run: python scripts/validate_packages.py
+
+      - name: Publish directly to this repository's GitHub Releases
+        if: steps.resolve.outputs.skip != 'true'
+        uses: vhick/portable-release-publisher@v1
+        with:
+          files: 'dist/*.zip'
+          tag: ${{ steps.resolve.outputs.tag }}
+          release-title: ZyntaxAI Native Portable ${{ steps.resolve.outputs.version }} (${{ steps.resolve.outputs.revision }})
+          keep-releases: '3'
+          prune: 'false'
+          dry-run: ${{ inputs.dry_run }}
+
+      - name: Independently check published release after publisher returns
+        if: steps.resolve.outputs.skip != 'true' && !inputs.dry_run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python scripts/verify_release.py
+
+      - name: Summary
+        if: always()
+        env:
+          RESOLVED_TAG: ${{ steps.resolve.outputs.tag }}
+          SKIPPED: ${{ steps.resolve.outputs.skip }}
+        run: |
+          if ($env:RESOLVED_TAG) {
+            Write-Host "Resolved release: $env:RESOLVED_TAG"
+            Write-Host "Already published and unchanged: $env:SKIPPED"
+            Write-Host "Publisher pruning: disabled. No Actions artifact uploads."
+          }
