@@ -14,7 +14,7 @@ echo   1. Launch ZyntaxAI
 echo   2. Open portable Data folder
 echo   3. Open application logs
 echo   4. Show portable paths and diagnostics
-echo   5. Enable Windows login autostart [current user]
+echo   5. Enable Windows login autostart [starts in tray]
 echo   6. Disable Windows login autostart
 echo   7. Show Windows login autostart status
 echo   8. Inspect leftover LocalAppData folder
@@ -83,7 +83,8 @@ if not exist "%~dp0App\zyntax.exe" (
     goto menu
 )
 echo Registers ONE current-user Windows startup entry. No administrator access.
-echo The entry runs Launch-ZyntaxAI.cmd so ZYNTAX_DATA_DIR stays portable.
+echo The entry runs Launch-ZyntaxAI.cmd --minimized to start in the tray.
+echo Normal manual launches continue to show the settings window.
 echo.
 reg query "%AUTOSTART_KEY%" /v "%AUTOSTART_VALUE%" >nul 2>&1
 if not errorlevel 1 (
@@ -94,15 +95,16 @@ if not errorlevel 1 (
     if errorlevel 2 goto menu
 )
 rem Backslash-escaped quotes make reg.exe store literal quotation marks.
-rem Registered command is: "cmd.exe" /d /c ""FULL_PATH\Launch-ZyntaxAI.cmd""
+rem Registered command: "cmd.exe" /d /c ""FULL_PATH\Launch-ZyntaxAI.cmd" --minimized"
 rem cmd /d prevents unrelated Command Processor AutoRun hooks.
-reg add "%AUTOSTART_KEY%" /v "%AUTOSTART_VALUE%" /t REG_SZ /d "\"%SystemRoot%\System32\cmd.exe\" /d /c \"\"%~dp0Launch-ZyntaxAI.cmd\"\"" /f >nul
+reg add "%AUTOSTART_KEY%" /v "%AUTOSTART_VALUE%" /t REG_SZ /d "\"%SystemRoot%\System32\cmd.exe\" /d /c \"\"%~dp0Launch-ZyntaxAI.cmd\" --minimized\"" /f >nul
 if errorlevel 1 (
     echo ERROR: Could not register Windows login autostart.
     echo Ensure this is your normal Windows account, then try again.
 ) else (
     echo Autostart entry registered successfully for the current Windows user.
-    echo It will run at the NEXT login. Windows may show a brief CMD window.
+    echo It will start in the system tray at your NEXT login.
+    echo Windows may briefly show a CMD window when starting the launcher.
     echo NOTE: Moving this portable folder requires selecting Enable again.
 )
 echo.
@@ -153,6 +155,14 @@ if errorlevel 1 (
     reg query "%AUTOSTART_KEY%" /v "%AUTOSTART_VALUE%"
     echo.
     echo If its folder path is outdated, choose option 5 to register this copy.
+    rem The argument is supported by the ZyntaxAI application itself.
+    reg query "%AUTOSTART_KEY%" /v "%AUTOSTART_VALUE%" 2>nul | findstr /l /c:"--minimized" >nul
+    if errorlevel 1 (
+        echo MODE: Legacy startup entry; may open the settings window.
+        echo Select option 5 to update this registration to tray startup.
+    ) else (
+        echo MODE: System tray startup [--minimized].
+    )
     echo Windows Startup Apps settings may separately disable a registered entry.
 )
 exit /b 0

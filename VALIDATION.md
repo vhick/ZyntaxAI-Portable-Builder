@@ -1,4 +1,4 @@
-# Validation record — 2026-10-31 (v1.3, optional Windows login autostart)
+# Validation record — 2026-11-01 (v1.5, system tray autostart)
 
 ## Evidence from user’s second Windows GitHub Actions run
 
@@ -50,3 +50,12 @@
 - Existing folders from prior portable versions are not removed automatically. Third-party Windows caches and other OS bookkeeping are beyond this portability redirection.
 
 - Added early environment validation before `logging::init()` after inspecting upstream `logging.rs` and `Paths::from_env()`. A direct EXE launch without ZYNTAX_DATA_DIR should no longer create settings/logs in the host profile.
+
+## v1.5 tray-start autostart update (2026-11-01)
+
+- Confirmed from official upstream v1.0.2 `src-tauri/src/lib.rs`: `ARG_MINIMIZED` is `--minimized`; on first startup this makes `start_hidden=true`, installs the tray, and hides Settings instead of showing it.
+- The v1.4 portable launcher forwards `%*`, so the builder modifies only the HKCU Run command in `ZyntaxAI-Manager.cmd`: it now appends `--minimized` after the quoted portable launcher path.
+- The existing manager still enables/disables/status-checks exactly one HKCU Run value, requires no elevation, and keeps every previous menu option. `7` also warns when an old entry lacks the argument.
+- Tests cover the presence of `--minimized` in the startup command, the legacy-entry diagnostic, preserved launch-argument forwarding, original portability/patch fixtures, and repository YAML and ZIP integrity.
+- This test environment is Linux; it cannot execute `reg.exe`, Windows login, or the ZyntaxAI GUI. **No actual Windows logon test performed.** No new compiled Rust changes are introduced; existing r5 executable may be reused.
+- Antivirus friendliness: no PowerShell/VBS helpers, process hiding, process injection, new persistence mechanism, scheduled task, or administrative privilege. Standard readable CMD + reg.exe; AV false positives cannot be ruled out.

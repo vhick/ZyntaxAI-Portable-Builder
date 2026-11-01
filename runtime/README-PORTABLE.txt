@@ -12,19 +12,24 @@ Window-position persistence is disabled to avoid host-profile state writes.
 The portable build intentionally disables installer-based updates and the
 upstream in-app Windows autostart plugin. Optional autostart is available in
 ZyntaxAI-Manager.cmd instead. It registers only one current-user Windows Run
-value that calls Launch-ZyntaxAI.cmd (not the EXE directly).
+value that calls Launch-ZyntaxAI.cmd --minimized (not the EXE directly).
 
 WINDOWS LOGIN AUTOSTART (OPTIONAL)
 Open ZyntaxAI-Manager.cmd in your portable folder:
-  5 - Enable Windows login autostart for the current user
+  5 - Enable Windows login autostart in the SYSTEM TRAY
   6 - Disable/remove the login autostart entry
-  7 - Inspect the entry and its saved launch path
+  7 - Inspect entry, launch path, and startup mode
   8 - Inspect any leftover old LocalAppData folder; only remove if empty
 The manager uses HKCU\Software\Microsoft\Windows\CurrentVersion\Run
 Value name: ZyntaxAI-Native-Portable
 No administrator permission, service, or scheduled task is required.
 Startup begins when you sign in to Windows (not at power-on before login).
 The console may briefly appear when Windows starts the CMD launcher.
+The --minimized argument is supported by upstream ZyntaxAI: it keeps the
+main window hidden at sign-in while the system tray icon remains available.
+Manual launches without --minimized open the main Settings window normally.
+If you already enabled autostart in an older manager, select 5 again and
+confirm replacement so that Windows receives the new --minimized argument.
 If you MOVE the portable folder, choose 5 again so Windows uses the new path.
 If you move it to a new computer, enable autostart on that computer separately.
 Before deleting a portable folder, choose 6 to remove its Windows startup entry.

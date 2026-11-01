@@ -289,9 +289,22 @@ class PortableManagerAutostartTests(unittest.TestCase):
         self.assertNotIn('runas', manager.lower())
         self.assertNotIn('executionpolicy', manager.lower())
 
+    def test_tray_autostart_passes_supported_argument(self):
+        manager = (ROOT / 'runtime/ZyntaxAI-Manager.cmd').read_text(encoding='utf-8')
+        self.assertIn('Launch-ZyntaxAI.cmd\\" --minimized', manager)
+        self.assertIn('MODE: System tray startup [--minimized]', manager)
+        self.assertIn('MODE: Legacy startup entry', manager)
+        self.assertIn('findstr /l /c:"--minimized"', manager)
+        self.assertIn('Select option 5 to update', manager)
+        self.assertNotIn('powershell -enc', manager.lower())
+        self.assertNotIn('wscript', manager.lower())
+        self.assertNotIn('start /min', manager.lower())
+        launcher = (ROOT / 'runtime/Launch-ZyntaxAI.cmd').read_text(encoding='utf-8')
+        self.assertIn('start "" "%ZYNTAX_EXE%" %*', launcher)
+
     def test_portable_launcher_unchanged_and_preserves_data(self):
         launcher = (ROOT / 'runtime/Launch-ZyntaxAI.cmd').read_text(encoding='utf-8')
         self.assertIn('ZYNTAX_DATA_DIR=%PORTABLE_ROOT%Data', launcher)
         self.assertIn(r'WEBVIEW2_USER_DATA_FOLDER=%PORTABLE_ROOT%Data\WebView2', launcher)
         self.assertIn('start "" "%ZYNTAX_EXE%" %*', launcher)
-        self.assertEqual((ROOT / 'BUILDER_REVISION').read_text().strip(), 'r5')
+        self.assertEqual((ROOT / 'BUILDER_REVISION').read_text().strip(), 'r6')
