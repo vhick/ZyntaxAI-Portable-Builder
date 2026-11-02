@@ -1,0 +1,147 @@
+name: Build ZyntaxAI Native Portable
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zyntaxai-native-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Windows x64 native build, validate, publish
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout independent builder (no stored git credentials)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Python quality gates
+        run: |
+          python -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Builder tests failed' }
+
+      - name: Resolve latest stable upstream tag and exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $raw = gh api 'repos/TheHolyOneZ/ZyntaxAI/tags?per_page=100'
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read upstream tags from GitHub API' }
+          $tags = @($raw | ConvertFrom-Json)
+          $stable = @($tags | Where-Object { $_.name -match '^v?[0-9]+\.[0-9]+\.[0-9]+$' } |
+            Sort-Object { [version]($_.name -replace '^v', '') } -Descending)
+          if ($stable.Count -eq 0) { throw 'No stable semver tag found. Refusing branch/nightly fallback.' }
+          $tag = $stable[0].name
+          $version = $tag -replace '^v',''
+          $releaseTag = "v$version-native-r1"
+          # gh release create below also rejects duplicate tags/releases; this is early feedback only.
+          gh release view $releaseTag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) { throw "Release $releaseTag already exists. Increment builder revision intentionally, never overwrite it." }
+          Write-Host "Latest upstream stable tag: $tag"
+          git clone --branch $tag --depth 1 --single-branch https://github.com/TheHolyOneZ/ZyntaxAI.git upstream
+          if ($LASTEXITCODE -ne 0) { throw "Could not checkout verified upstream tag $tag" }
+          $commit = (git -C upstream rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[a-f0-9]{40}$') { throw 'Cannot resolve source SHA' }
+          $upstreamVersion = (Get-Content upstream\src-tauri\tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ($upstreamVersion -ne $version) { throw "Source version $upstreamVersion differs from tag $tag" }
+          "UPSTREAM_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "UPSTREAM_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "UPSTREAM_COMMIT=$commit" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "PORTABLE_RELEASE_TAG=$releaseTag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Pinned source commit: $commit"
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+          run_install: false
+
+      - name: Apply fail-closed native portability source changes
+        run: |
+          python scripts/patch_upstream.py --upstream upstream
+          if ($LASTEXITCODE -ne 0) { throw 'Upstream patch failed. Inspect changed source before updating builder.' }
+
+      - name: Install exact JavaScript dependencies
+        working-directory: upstream
+        run: |
+          pnpm install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { throw 'pnpm frozen dependency install failed' }
+
+      - name: Build upstream Tauri GUI executable without installer (headless)
+        working-directory: upstream
+        env:
+          CI: 'true'
+        run: |
+          pnpm tauri build --ci --no-bundle
+          if ($LASTEXITCODE -ne 0) { throw 'Tauri build failed' }
+          if (!(Test-Path target\release\zyntax.exe)) { throw 'Missing expected Tauri release executable' }
+
+      - name: Verify upstream store regression tests
+        working-directory: upstream
+        run: |
+          cargo test -p zyntax-store --release
+          if ($LASTEXITCODE -ne 0) { throw 'Zyntax store tests failed' }
+
+      - name: Compile actual root x64 GUI EXE with upstream icon
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Copy-Item upstream\src-tauri\icons\icon.ico launcher\icon.ico -Force
+          cmake -S launcher -B launcher/build -G 'Visual Studio 17 2022' -A x64
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed' }
+          cmake --build launcher/build --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { throw 'Native root EXE compilation failed' }
+          if (!(Test-Path launcher/build/Release/ZyntaxAIPortable.exe)) { throw 'Native launcher missing' }
+
+      - name: Build verifiable native and GPL corresponding-source ZIP assets
+        run: |
+          python scripts/package.py --upstream upstream --launcher launcher/build/Release/ZyntaxAIPortable.exe --version $env:UPSTREAM_VERSION --tag $env:UPSTREAM_TAG --revision r1
+          if ($LASTEXITCODE -ne 0) { throw 'Portable package validation failed' }
+          python scripts/validate_release.py --dist dist --version $env:UPSTREAM_VERSION --revision r1
+          if ($LASTEXITCODE -ne 0) { throw 'Release ZIP validation failed' }
+
+      - name: Headless launcher smoke test (does not start GUI app)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Get-ChildItem dist -Filter '*_Native_x64_r1.zip' | Select-Object -First 1
+          $target = Join-Path $env:RUNNER_TEMP 'zyntax-portable-smoke'
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $target -Force
+          $exe = Join-Path $target 'ZyntaxAIPortable\ZyntaxAIPortable.exe'
+          $p = Start-Process -FilePath $exe -ArgumentList '--self-test' -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "Native launcher self-test failed with $($p.ExitCode)" }
+          if (!(Test-Path (Join-Path $target 'ZyntaxAIPortable\Data\TraceGuard\Report.txt'))) { throw 'TraceGuard report missing' }
+          Write-Host 'Confirmed compiled launcher and portable Data writable in CI.'
+          Write-Host 'Full GUI/tray/WebView2 startup and host-trace attribution require interactive clean-host testing.'
+
+      - name: Publish directly to same repository Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archives = @(Get-ChildItem dist -Filter '*.zip' | ForEach-Object { $_.FullName })
+          if ($archives.Count -ne 2) { throw "Expected two ZIPs; found $($archives.Count)" }
+          $archives += (Resolve-Path 'dist/SHA256SUMS.txt').Path
+          gh release create $env:PORTABLE_RELEASE_TAG @archives `
+            --repo $env:GITHUB_REPOSITORY `
+            --target $env:GITHUB_SHA `
+            --title "ZyntaxAI $env:UPSTREAM_VERSION Native Portable r1" `
+            --notes-file dist/release-notes.md
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub Release publishing failed; no success claimed' }
+          gh release view $env:PORTABLE_RELEASE_TAG --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { throw 'Could not verify published release' }
