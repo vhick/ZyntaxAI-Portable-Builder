@@ -46,7 +46,7 @@ def main():
     parser.add_argument('--launcher', required=True)
     parser.add_argument('--version', required=True)
     parser.add_argument('--tag', required=True)
-    parser.add_argument('--revision', default='r1')
+    parser.add_argument('--revision', default='r2')
     args = parser.parse_args()
     upstream = pathlib.Path(args.upstream).resolve()
     launcher = pathlib.Path(args.launcher).resolve()
@@ -120,7 +120,7 @@ def main():
             shutil.copy2(upstream / rel, dest)
         builder_dest = source_root / 'Portable-Builder'
         for rel in ['launcher/ZyntaxAIPortable.cpp', 'launcher/CMakeLists.txt', 'launcher/icon.rc',
-                    'scripts/patch_upstream.py', 'scripts/package.py', 'scripts/validate_release.py',
+                    'scripts/patch_upstream.py', 'scripts/build_launcher.ps1', 'scripts/package.py', 'scripts/validate_release.py',
                     'manager/ZyntaxAI-Manager.cmd',
                     '.github/workflows/build-native.yml', 'README.md', 'LICENSE-BUILDER-MIT.txt',
                     'tests/test_builder.py', 'tests/TraceGuard-HostSnapshot.ps1',

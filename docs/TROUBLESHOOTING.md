@@ -11,3 +11,5 @@
 - **Release already exists:** Do not use `gh release upload --clobber`. Increment builder revision after meaningful source changes; preserve manually curated releases.
 - **Host data collision:** Do not delete an installed ZyntaxAI profile or overwrite credentials. Source-level portable paths are separate; TraceGuard remains a reporting monitor.
 - **AV detection:** Submit the actual unsigned binary for independent analysis/signing; do not add exclusions, encoded PowerShell or auto-elevation to evade security products.
+
+- **Visual Studio 17 2022 generator missing (r1 error):** GitHub `windows-latest` moved to Visual Studio 2026. r2 runs `scripts/build_launcher.ps1`, detects MSVC with `vswhere`, chooses VS 17/18 generator, and requires CMake >= 4.2 for VS 2026. The runner must include x64 MSVC tools. Do not switch to an unsupported or guessed generator.

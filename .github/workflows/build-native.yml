@@ -42,7 +42,7 @@ jobs:
           if ($stable.Count -eq 0) { throw 'No stable semver tag found. Refusing branch/nightly fallback.' }
           $tag = $stable[0].name
           $version = $tag -replace '^v',''
-          $releaseTag = "v$version-native-r1"
+          $releaseTag = "v$version-native-r2"
           # gh release create below also rejects duplicate tags/releases; this is early feedback only.
           gh release view $releaseTag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) { throw "Release $releaseTag already exists. Increment builder revision intentionally, never overwrite it." }
@@ -99,27 +99,23 @@ jobs:
           cargo test -p zyntax-store --release
           if ($LASTEXITCODE -ne 0) { throw 'Zyntax store tests failed' }
 
-      - name: Compile actual root x64 GUI EXE with upstream icon
+      - name: Detect installed MSVC and compile actual root x64 GUI EXE
         run: |
-          $ErrorActionPreference = 'Stop'
-          Copy-Item upstream\src-tauri\icons\icon.ico launcher\icon.ico -Force
-          cmake -S launcher -B launcher/build -G 'Visual Studio 17 2022' -A x64
-          if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed' }
-          cmake --build launcher/build --config Release --parallel
-          if ($LASTEXITCODE -ne 0) { throw 'Native root EXE compilation failed' }
+          & ./scripts/build_launcher.ps1
+          if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'Native root EXE compilation failed' }
           if (!(Test-Path launcher/build/Release/ZyntaxAIPortable.exe)) { throw 'Native launcher missing' }
 
       - name: Build verifiable native and GPL corresponding-source ZIP assets
         run: |
-          python scripts/package.py --upstream upstream --launcher launcher/build/Release/ZyntaxAIPortable.exe --version $env:UPSTREAM_VERSION --tag $env:UPSTREAM_TAG --revision r1
+          python scripts/package.py --upstream upstream --launcher launcher/build/Release/ZyntaxAIPortable.exe --version $env:UPSTREAM_VERSION --tag $env:UPSTREAM_TAG --revision r2
           if ($LASTEXITCODE -ne 0) { throw 'Portable package validation failed' }
-          python scripts/validate_release.py --dist dist --version $env:UPSTREAM_VERSION --revision r1
+          python scripts/validate_release.py --dist dist --version $env:UPSTREAM_VERSION --revision r2
           if ($LASTEXITCODE -ne 0) { throw 'Release ZIP validation failed' }
 
       - name: Headless launcher smoke test (does not start GUI app)
         run: |
           $ErrorActionPreference = 'Stop'
-          $zip = Get-ChildItem dist -Filter '*_Native_x64_r1.zip' | Select-Object -First 1
+          $zip = Get-ChildItem dist -Filter '*_Native_x64_r2.zip' | Select-Object -First 1
           $target = Join-Path $env:RUNNER_TEMP 'zyntax-portable-smoke'
           Expand-Archive -LiteralPath $zip.FullName -DestinationPath $target -Force
           $exe = Join-Path $target 'ZyntaxAIPortable\ZyntaxAIPortable.exe'
@@ -140,7 +136,7 @@ jobs:
           gh release create $env:PORTABLE_RELEASE_TAG @archives `
             --repo $env:GITHUB_REPOSITORY `
             --target $env:GITHUB_SHA `
-            --title "ZyntaxAI $env:UPSTREAM_VERSION Native Portable r1" `
+            --title "ZyntaxAI $env:UPSTREAM_VERSION Native Portable r2" `
             --notes-file dist/release-notes.md
           if ($LASTEXITCODE -ne 0) { throw 'GitHub Release publishing failed; no success claimed' }
           gh release view $env:PORTABLE_RELEASE_TAG --repo $env:GITHUB_REPOSITORY

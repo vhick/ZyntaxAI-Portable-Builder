@@ -31,4 +31,22 @@ class BuilderTests(unittest.TestCase):
         self.assertIn('ZyntaxAIPortable WIN32', cmake)
         self.assertIn('persist-credentials: false', workflow)
 
+    def test_windows_runner_generator_detected_not_hardcoded(self):
+        workflow = (ROOT / '.github/workflows/build-native.yml').read_text()
+        script = (ROOT / 'scripts/build_launcher.ps1').read_text()
+        self.assertIn('scripts/build_launcher.ps1', workflow)
+        self.assertNotIn("-G 'Visual Studio 17 2022'", workflow)
+        self.assertIn('Visual Studio 17 2022', script)
+        self.assertIn('Visual Studio 18 2026', script)
+        self.assertIn('vswhere', script)
+        self.assertIn('CMAKE_GENERATOR_INSTANCE', script)
+        self.assertIn("[version]'4.2.0'", script)
+        self.assertIn('v$version-native-r2', workflow)
+        self.assertIn('--revision r2', workflow)
+
+    def test_launcher_dependencies_are_explicit(self):
+        cmake = (ROOT / 'launcher/CMakeLists.txt').read_text()
+        self.assertIn('shell32 advapi32 user32', cmake)
+
+
 if __name__ == '__main__': unittest.main()
